@@ -1,219 +1,158 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🌡️ Dashboard Clima Ambiental</title>
 
-<title>🌡️ Smart Climate Dashboard</title>
+    <!-- Bootstrap -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
 
-<!-- Bootstrap -->
-<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- Iconos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
 
-<!-- Icons -->
-<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body {
+            background: linear-gradient(135deg, #ff6b6b, #4ecdc4);
+            min-height: 100vh;
+        }
 
-<!-- Chart.js -->
-<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        .dashboard-container {
+            background: white;
+            border-radius: 20px;
+            padding: 2rem;
+            margin-top: 2rem;
+        }
 
-<style>
-body {
-    background: linear-gradient(135deg, #1f4037, #99f2c8);
-    min-height: 100vh;
-    font-family: 'Segoe UI';
-    color: white;
-}
+        .temp-card {
+            background: linear-gradient(135deg, #667eea, #764ba2);
+            color: white;
+            border-radius: 15px;
+            padding: 2rem;
+            text-align: center;
+        }
 
-.card-glass {
-    background: rgba(255,255,255,0.1);
-    backdrop-filter: blur(15px);
-    border-radius: 20px;
-    padding: 20px;
-    box-shadow: 0 10px 40px rgba(0,0,0,0.3);
-}
+        .temp-value {
+            font-size: 4rem;
+            font-weight: bold;
+        }
 
-.temp-value {
-    font-size: 4rem;
-    font-weight: bold;
-    transition: all 0.3s ease;
-}
+        .status-indicator {
+            width: 15px;
+            height: 15px;
+            border-radius: 50%;
+            display: inline-block;
+        }
 
-.status-dot {
-    width: 12px;
-    height: 12px;
-    border-radius: 50%;
-    display: inline-block;
-}
+        .status-online { background: green; }
+        .status-offline { background: red; }
 
-.online { background: #00ff88; }
-.offline { background: red; }
-
-button {
-    border-radius: 20px !important;
-}
-
-.log-box {
-    max-height: 200px;
-    overflow-y: auto;
-    font-size: 0.85rem;
-}
-</style>
+        .log-container {
+            background: #f1f1f1;
+            padding: 1rem;
+            max-height: 200px;
+            overflow-y: auto;
+        }
+    </style>
 </head>
 
 <body>
 
-<div class="container py-4">
+<div class="connection-status p-2 bg-white position-fixed top-0 end-0 m-3 rounded shadow">
+    <span id="connectionDot" class="status-indicator status-offline"></span>
+    <span id="connectionText">Desconectado</span>
+</div>
 
-    <!-- HEADER -->
-    <div class="text-center mb-4">
-        <h1 class="fw-bold">🌡️ Smart Climate Dashboard</h1>
-        <p>Monitoreo en tiempo real</p>
+<div class="container">
+    <div class="dashboard-container">
 
-        <span id="statusDot" class="status-dot offline"></span>
-        <span id="statusText">Desconectado</span>
-    </div>
+        <h1 class="text-center mb-4">🌡️ Dashboard Clima</h1>
 
-    <!-- TEMPERATURA -->
-    <div class="row mb-4">
-        <div class="col-md-6">
-            <div class="card-glass text-center">
-                <h4>Temperatura</h4>
-                <div id="tempValue" class="temp-value">--°C</div>
-                <p id="sensorId">Sensor: --</p>
-                <p id="lastUpdate">--</p>
-            </div>
+        <div class="temp-card">
+            <h3>Temperatura</h3>
+            <div id="tempValue" class="temp-value">--°C</div>
+            <div id="sensorId">Sensor: --</div>
+            <div id="lastUpdate">--</div>
         </div>
 
-        <!-- STATUS -->
-        <div class="col-md-6">
-            <div class="card-glass text-center">
-                <h4>Estado</h4>
-                <div id="tempStatus">Esperando datos...</div>
-            </div>
+        <div class="text-center mt-4">
+            <button class="btn btn-primary" onclick="fetchData()">Actualizar</button>
+            <button class="btn btn-outline-primary" onclick="toggleAutoRefresh()" id="autoBtn">
+                Auto OFF
+            </button>
         </div>
+
+        <div class="log-container mt-4" id="logContainer"></div>
+
     </div>
-
-    <!-- GRÁFICA -->
-    <div class="card-glass mb-4">
-        <canvas id="tempChart"></canvas>
-    </div>
-
-    <!-- BOTONES -->
-    <div class="text-center mb-4">
-        <button class="btn btn-light me-2" onclick="fetchData()">
-            🔄 Actualizar
-        </button>
-        <button class="btn btn-outline-light" onclick="toggleAuto()" id="autoBtn">
-            ▶ Auto OFF
-        </button>
-    </div>
-
-    <!-- LOGS -->
-    <div class="card-glass log-box" id="logs"></div>
-
 </div>
 
 <script>
-const URL = 'https://unmonumental-touchily-meghann.ngrok-free.dev/api/temperatura';
+    // 🔥 TU URL DE NGROK YA CONFIGURADA
+    const VM_SENSOR_URL = 'https://unmonumental-touchily-meghann.ngrok-free.dev/api/temperatura';
 
-let auto = false;
-let interval;
+    let autoRefresh = false;
+    let interval = null;
 
-let temps = [];
-let labels = [];
-
-// CHART
-const ctx = document.getElementById('tempChart').getContext('2d');
-const chart = new Chart(ctx, {
-    type: 'line',
-    data: {
-        labels: labels,
-        datasets: [{
-            label: 'Temperatura °C',
-            data: temps,
-            borderWidth: 3,
-            tension: 0.4
-        }]
+    function log(msg) {
+        const container = document.getElementById("logContainer");
+        const time = new Date().toLocaleTimeString();
+        container.innerHTML = `<div>[${time}] ${msg}</div>` + container.innerHTML;
     }
-});
 
-// LOG
-function log(msg){
-    const box = document.getElementById('logs');
-    const time = new Date().toLocaleTimeString();
-    box.innerHTML = `[${time}] ${msg}<br>` + box.innerHTML;
-}
+    function setConnection(status) {
+        const dot = document.getElementById("connectionDot");
+        const text = document.getElementById("connectionText");
 
-// STATUS
-function setStatus(ok){
-    document.getElementById('statusDot').className = 'status-dot ' + (ok ? 'online':'offline');
-    document.getElementById('statusText').innerText = ok ? 'Conectado':'Error';
-}
-
-// FETCH
-async function fetchData(){
-    log("Consultando sensor...");
-
-    try{
-        const res = await fetch(URL);
-        const data = await res.json();
-
-        const temp = parseFloat(data.temperatura_c);
-
-        document.getElementById('tempValue').innerText = temp + "°C";
-        document.getElementById('sensorId').innerText = "Sensor: " + data.sensor_id;
-        document.getElementById('lastUpdate').innerText = new Date().toLocaleString();
-
-        // STATUS TEMP
-        const status = document.getElementById('tempStatus');
-        if(temp > 30){
-            status.innerHTML = "🔥 Alta";
-        } else if(temp < 20){
-            status.innerHTML = "❄ Baja";
+        if (status) {
+            dot.className = "status-indicator status-online";
+            text.innerText = "Conectado";
         } else {
-            status.innerHTML = "✅ Normal";
+            dot.className = "status-indicator status-offline";
+            text.innerText = "Desconectado";
         }
+    }
 
-        // GRAPH
-        if(temps.length > 10){
-            temps.shift();
-            labels.shift();
+    async function fetchData() {
+        log("Consultando sensor...");
+
+        try {
+            const response = await fetch(VM_SENSOR_URL);
+            const data = await response.json();
+
+            document.getElementById("tempValue").innerText = data.temperatura_c + "°C";
+            document.getElementById("sensorId").innerText = "Sensor: " + data.sensor_id;
+            document.getElementById("lastUpdate").innerText = new Date(data.timestamp).toLocaleString();
+
+            setConnection(true);
+            log("Datos recibidos correctamente");
+
+        } catch (error) {
+            setConnection(false);
+            log("Error: " + error.message);
         }
-
-        temps.push(temp);
-        labels.push(new Date().toLocaleTimeString());
-
-        chart.update();
-
-        setStatus(true);
-        log("OK " + temp + "°C");
-
-    }catch(e){
-        setStatus(false);
-        log("ERROR: " + e.message);
     }
-}
 
-// AUTO
-function toggleAuto(){
-    const btn = document.getElementById("autoBtn");
+    function toggleAutoRefresh() {
+        const btn = document.getElementById("autoBtn");
 
-    if(auto){
-        clearInterval(interval);
-        auto = false;
-        btn.innerText = "▶ Auto OFF";
-        log("Auto OFF");
-    }else{
-        fetchData();
-        interval = setInterval(fetchData, 5000);
-        auto = true;
-        btn.innerText = "⏹ Auto ON";
-        log("Auto ON");
+        if (autoRefresh) {
+            clearInterval(interval);
+            autoRefresh = false;
+            btn.innerText = "Auto OFF";
+            log("Auto desactivado");
+        } else {
+            fetchData();
+            interval = setInterval(fetchData, 5000);
+            autoRefresh = true;
+            btn.innerText = "Auto ON";
+            log("Auto activado");
+        }
     }
-}
 
-window.onload = () => {
-    log("Sistema listo 🚀");
-};
+    window.onload = () => {
+        log("Dashboard listo");
+    };
 </script>
 
 </body>
